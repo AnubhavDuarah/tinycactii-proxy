@@ -5,57 +5,40 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const MODELS = [
-    'google/gemma-2-9b-it:free',
-    'meta-llama/llama-3.2-3b-instruct:free',
-    'microsoft/phi-3-mini-128k-instruct:free',
-    'qwen/qwen-2-7b-instruct:free',
-    'mistralai/mistral-7b-instruct:free',
-  ];
-
   const { messages } = req.body;
 
-  for (const model of MODELS) {
-    try {
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const systemPrompt = `You are Pahi, the friendly AI support assistant for Tiny Cactii, a live plant nursery based in Assam, India, founded by Anubhav Duarah. Your personality is warm, helpful, and caring. Use plant emojis occasionally. Keep answers concise. If unsure, direct users to WhatsApp +916900528070 or email tinycactiiii@gmail.com`;
+
+  const geminiMessages = messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
+
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://www.tinycactii.shop',
-          'X-Title': 'Tiny Cactii Support'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model,
-          messages: [
-            {
-              role: 'system',
-              content: `You are Pahi, the friendly AI support assistant for Tiny Cactii, a live plant nursery based in Assam, India, founded by Anubhav Duarah. Your personality is warm, helpful, and caring. You speak in a friendly tone and occasionally use plant emojis. Keep answers concise and helpful. If unsure, direct users to WhatsApp +916900528070 or email tinycactiiii@gmail.com`
-            },
-            ...messages
-          ],
-          max_tokens: 500,
-          temperature: 0.7
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: geminiMessages,
+          generationConfig: { maxOutputTokens: 500, temperature: 0.7 }
         })
-      });
-
-      const data = await response.json();
-
-      if (response.ok) {
-        return res.status(200).json(data);
       }
+    );
 
-      // 429 = rate limited, try next model
-      if (response.status === 429) continue;
+    const data = await response.json();
+    if (!response.ok) return res.status(response.status).json(data);
 
-      // Other error, return it
-      return res.status(response.status).json(data);
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || null;
+    if (!text) return res.status(500).json({ error: 'No response from Gemini' });
 
-    } catch (err) {
-      continue; // network error, try next model
-    }
+    return res.status(200).json({
+      choices: [{ message: { role: 'assistant', content: text } }]
+    });
+
+  } catch (err) {
+    return res.status(500).json({ error: 'Internal server error' });
   }
-
-  // All models failed
-  return res.status(429).json({ error: 'All models are currently busy. Please try again in a moment.' });
 }
