@@ -19,7 +19,7 @@ export default async function handler(req, res) {
         'X-Title': 'Tiny Cactii Support'
       },
       body: JSON.stringify({
-        model: 'meta-llama/llama-3.2-3b-instruct:free',
+        model: 'google/gemma-2-9b-it:free',
         messages: [
           {
             role: 'system',
